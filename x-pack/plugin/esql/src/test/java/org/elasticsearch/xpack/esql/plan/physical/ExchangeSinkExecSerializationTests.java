@@ -80,7 +80,7 @@ public class ExchangeSinkExecSerializationTests extends AbstractPhysicalPlanSeri
      * See {@link #testManyTypeConflicts(boolean, ByteSizeValue)} for more.
      */
     public void testManyTypeConflictsWithParent() throws IOException {
-        testManyTypeConflicts(true, ByteSizeValue.ofBytes(3271486));
+        testManyTypeConflicts(true, ByteSizeValue.ofBytes(3307704L));
         /*
          * History:
          *  2 gb+ - start
@@ -90,9 +90,45 @@ public class ExchangeSinkExecSerializationTests extends AbstractPhysicalPlanSeri
          */
     }
 
+    private void testManyTypeConflicts(boolean withParent, ByteSizeValue expected) throws IOException {
+        EsIndex index = EsIndexSerializationTests.indexWithManyConflicts(withParent);
+        testSerializePlanWithIndex(index, expected);
+    }
+
     /**
-     * Test the size of serializing a plan with many conflicts. Callers of
-     * this method intentionally use a very precise size for the serialized
+     * Test the size of serializing a plan like
+     * FROM index | LIMIT 10
+     * with a single root field that has many children, grandchildren etc.
+     */
+    public void testDeeplyNestedFields() throws IOException {
+        ByteSizeValue expected = ByteSizeValue.ofBytes(69352081);
+
+        int depth = 6;
+        int childrenPerLevel = 8;
+
+        EsIndex index = EsIndexSerializationTests.deeplyNestedIndex(depth, childrenPerLevel);
+        testSerializePlanWithIndex(index, expected);
+    }
+
+    /**
+     * Test the size of serializing a plan like
+     * FROM index | LIMIT 10 | KEEP one_single_field
+     * with a single root field that has many children, grandchildren etc.
+     */
+    public void testDeeplyNestedFieldsKeepOnlyOne() throws IOException {
+        ByteSizeValue expected = ByteSizeValue.ofBytes(21183264);
+
+        int depth = 6;
+        int childrenPerLevel = 9;
+
+        EsIndex index = EsIndexSerializationTests.deeplyNestedIndex(depth, childrenPerLevel);
+        testSerializePlanWithIndex(index, expected, false);
+    }
+
+    /**
+     * Test the size of serializing the physical plan that will be sent to a data node.
+     * The plan corresponds to `FROM index | LIMIT 10`.
+     * Callers of this method intentionally use a very precise size for the serialized
      * data so a programmer making changes has to think when this size changes.
      * <p>
      *     In general, shrinking the over the wire size is great and the precise
@@ -107,10 +143,14 @@ public class ExchangeSinkExecSerializationTests extends AbstractPhysicalPlanSeri
      *     ESQL impossible to use at all for big mappings with many conflicts.
      * </p>
      */
-    private void testManyTypeConflicts(boolean withParent, ByteSizeValue expected) throws IOException {
-        EsIndex index = EsIndexSerializationTests.indexWithManyConflicts(withParent);
-        List<Attribute> attributes = Analyzer.mappingAsAttributes(randomSource(), index.mapping());
-        EsRelation relation = new EsRelation(randomSource(), index, attributes, IndexMode.STANDARD);
+    private void testSerializePlanWithIndex(EsIndex index, ByteSizeValue expected) throws IOException {
+        testSerializePlanWithIndex(index, expected, true);
+    }
+
+    private void testSerializePlanWithIndex(EsIndex index, ByteSizeValue expected, boolean keepAllFields) throws IOException {
+        List<Attribute> allAttributes = Analyzer.mappingAsAttributes(randomSource(), index.mapping());
+        List<Attribute> keepAttributes = keepAllFields ? allAttributes : List.of(allAttributes.get(0));
+        EsRelation relation = new EsRelation(randomSource(), index, keepAttributes, IndexMode.STANDARD);
         Limit limit = new Limit(randomSource(), new Literal(randomSource(), 10, DataType.INTEGER), relation);
         Project project = new Project(randomSource(), limit, limit.output());
         FragmentExec fragmentExec = new FragmentExec(project);
