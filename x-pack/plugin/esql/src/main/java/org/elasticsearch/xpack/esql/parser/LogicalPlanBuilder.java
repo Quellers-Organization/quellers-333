@@ -226,9 +226,12 @@ public class LogicalPlanBuilder extends ExpressionBuilder {
 
     @Override
     public PlanFactory visitMvExpandCommand(EsqlBaseParser.MvExpandCommandContext ctx) {
-        UnresolvedAttribute field = visitQualifiedName(ctx.qualifiedName());
+        Expression field = expression(ctx.qualifiedNameOrParam());
         Source src = source(ctx);
-        return child -> new MvExpand(src, child, field, new UnresolvedAttribute(src, field.name()));
+        if (field instanceof UnresolvedAttribute ua) {
+            return child -> new MvExpand(src, child, ua, new UnresolvedAttribute(src, ua.name()));
+        }
+        throw new ParsingException(src, "Unsupported mv_expand field [{}]", field);
 
     }
 
@@ -392,7 +395,7 @@ public class LogicalPlanBuilder extends ExpressionBuilder {
 
     @Override
     public PlanFactory visitDropCommand(EsqlBaseParser.DropCommandContext ctx) {
-        List<NamedExpression> removals = visitQualifiedNamePatterns(ctx.qualifiedNamePatterns(), ne -> {
+        List<NamedExpression> removals = visitQualifiedNamePatternsOrParams(ctx.qualifiedNamePatternsOrParams(), ne -> {
             if (ne instanceof UnresolvedStar) {
                 var src = ne.source();
                 throw new ParsingException(src, "Removing all fields is not allowed [{}]", src.text());
@@ -411,7 +414,7 @@ public class LogicalPlanBuilder extends ExpressionBuilder {
     @Override
     public PlanFactory visitKeepCommand(EsqlBaseParser.KeepCommandContext ctx) {
         final Holder<Boolean> hasSeenStar = new Holder<>(false);
-        List<NamedExpression> projections = visitQualifiedNamePatterns(ctx.qualifiedNamePatterns(), ne -> {
+        List<NamedExpression> projections = visitQualifiedNamePatternsOrParams(ctx.qualifiedNamePatternsOrParams(), ne -> {
             if (ne instanceof UnresolvedStar) {
                 if (hasSeenStar.get()) {
                     var src = ne.source();
@@ -443,7 +446,18 @@ public class LogicalPlanBuilder extends ExpressionBuilder {
             Mode mode = tuple.v1();
             String policyNameString = tuple.v2();
 
-            NamedExpression matchField = ctx.ON() != null ? visitQualifiedNamePattern(ctx.matchField) : new EmptyAttribute(source);
+            NamedExpression matchField;
+            if (ctx.ON() != null) {
+                Expression field = expression(ctx.matchField);
+                if (field instanceof NamedExpression ne) {
+                    matchField = ne;
+                } else {
+                    throw new ParsingException(source, "Unsupported ENRICH field [{}]", field);
+                }
+            } else {
+                matchField = new EmptyAttribute(source);
+            }
+
             if (matchField instanceof UnresolvedNamePattern up) {
                 throw new ParsingException(source, "Using wildcards [*] in ENRICH WITH projections is not allowed [{}]", up.pattern());
             }

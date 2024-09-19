@@ -466,6 +466,16 @@ public interface EsqlBaseParserListener extends ParseTreeListener {
    */
   void exitQualifiedName(EsqlBaseParser.QualifiedNameContext ctx);
   /**
+   * Enter a parse tree produced by {@link EsqlBaseParser#qualifiedNameOrParam}.
+   * @param ctx the parse tree
+   */
+  void enterQualifiedNameOrParam(EsqlBaseParser.QualifiedNameOrParamContext ctx);
+  /**
+   * Exit a parse tree produced by {@link EsqlBaseParser#qualifiedNameOrParam}.
+   * @param ctx the parse tree
+   */
+  void exitQualifiedNameOrParam(EsqlBaseParser.QualifiedNameOrParamContext ctx);
+  /**
    * Enter a parse tree produced by {@link EsqlBaseParser#qualifiedNamePattern}.
    * @param ctx the parse tree
    */
@@ -485,6 +495,26 @@ public interface EsqlBaseParserListener extends ParseTreeListener {
    * @param ctx the parse tree
    */
   void exitQualifiedNamePatterns(EsqlBaseParser.QualifiedNamePatternsContext ctx);
+  /**
+   * Enter a parse tree produced by {@link EsqlBaseParser#qualifiedNamePatternsOrParams}.
+   * @param ctx the parse tree
+   */
+  void enterQualifiedNamePatternsOrParams(EsqlBaseParser.QualifiedNamePatternsOrParamsContext ctx);
+  /**
+   * Exit a parse tree produced by {@link EsqlBaseParser#qualifiedNamePatternsOrParams}.
+   * @param ctx the parse tree
+   */
+  void exitQualifiedNamePatternsOrParams(EsqlBaseParser.QualifiedNamePatternsOrParamsContext ctx);
+  /**
+   * Enter a parse tree produced by {@link EsqlBaseParser#qualifiedNamePatternOrParam}.
+   * @param ctx the parse tree
+   */
+  void enterQualifiedNamePatternOrParam(EsqlBaseParser.QualifiedNamePatternOrParamContext ctx);
+  /**
+   * Exit a parse tree produced by {@link EsqlBaseParser#qualifiedNamePatternOrParam}.
+   * @param ctx the parse tree
+   */
+  void exitQualifiedNamePatternOrParam(EsqlBaseParser.QualifiedNamePatternOrParamContext ctx);
   /**
    * Enter a parse tree produced by {@link EsqlBaseParser#identifier}.
    * @param ctx the parse tree

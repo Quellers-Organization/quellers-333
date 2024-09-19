@@ -141,6 +141,8 @@ final class RequestXContent {
             DataType type = null;
             QueryParam currentParam = null;
             TempObjects param;
+            boolean isField = false;
+            HashMap<String, Object> tempMap = new HashMap<>();
 
             while ((token = p.nextToken()) != XContentParser.Token.END_ARRAY) {
                 XContentLocation loc = p.getTokenLocation();
@@ -154,6 +156,7 @@ final class RequestXContent {
                             )
                         );
                     }
+                    isField = false;
                     for (Map.Entry<String, Object> entry : param.fields.entrySet()) {
                         String name = entry.getKey();
                         if (isValidParamName(name) == false) {
@@ -168,14 +171,26 @@ final class RequestXContent {
                                 )
                             );
                         }
-                        type = DataType.fromJava(entry.getValue());
+                        value = entry.getValue();
+                        if (value instanceof HashMap<?, ?> v) {
+                            tempMap.clear();
+                            for (Map.Entry<?, ?> kv : v.entrySet()) {
+                                tempMap.put(kv.getKey().toString().toLowerCase(Locale.ROOT), kv.getValue());
+                            }
+                            value = tempMap.get("value");
+                            if (tempMap.get("identifier") != null) {
+                                isField = (boolean) tempMap.get("identifier");
+                            }
+                        }
+                        type = DataType.fromJava(value);
                         if (type == null) {
                             errors.add(new XContentParseException(loc, entry + " is not supported as a parameter"));
                         }
-                        currentParam = new QueryParam(name, entry.getValue(), type);
+                        currentParam = new QueryParam(name, value, isField ? DataType.NULL : type, isField);
                         namedParams.add(currentParam);
                     }
                 } else {
+                    value = null;
                     if (token == XContentParser.Token.VALUE_STRING) {
                         value = p.text();
                         type = DataType.KEYWORD;

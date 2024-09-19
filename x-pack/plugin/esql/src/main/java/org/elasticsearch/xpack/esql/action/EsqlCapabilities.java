@@ -304,7 +304,12 @@ public class EsqlCapabilities {
         /**
          * Support explicit casting from string literal to DATE_PERIOD or TIME_DURATION.
          */
-        CAST_STRING_LITERAL_TO_TEMPORAL_AMOUNT;
+        CAST_STRING_LITERAL_TO_TEMPORAL_AMOUNT,
+
+        /**
+         * Support named parameters for field names.
+         */
+        NAMED_PARAMETER_FOR_FIELD_NAME;
 
         private final boolean snapshotOnly;
         private final FeatureFlag featureFlag;

@@ -255,6 +255,42 @@ public abstract class ExpressionBuilder extends IdentifierBuilder {
     }
 
     @Override
+    public List<NamedExpression> visitQualifiedNamePatternsOrParams(EsqlBaseParser.QualifiedNamePatternsOrParamsContext ctx) {
+        return visitQualifiedNamePatternsOrParams(ctx, ne -> {});
+    }
+
+    protected List<NamedExpression> visitQualifiedNamePatternsOrParams(
+        EsqlBaseParser.QualifiedNamePatternsOrParamsContext ctx,
+        Consumer<NamedExpression> checker
+    ) {
+        if (ctx == null) {
+            return emptyList();
+        }
+        List<EsqlBaseParser.QualifiedNamePatternOrParamContext> identifiers = ctx.qualifiedNamePatternOrParam();
+        List<NamedExpression> names = new ArrayList<>(identifiers.size());
+
+        for (EsqlBaseParser.QualifiedNamePatternOrParamContext patternOrParamContext : identifiers) {
+            Expression exp = expression(patternOrParamContext);
+            NamedExpression ne;
+            if (exp instanceof Literal lit) {
+                // convert a * to an UnresolvedStar
+                if (lit.value().equals(WILDCARD)) {
+                    ne = new UnresolvedStar(source(ctx), null);
+                } else {
+                    // TODO convert a literal to an UnresolvedNamePatter or UnresolvedAttribute
+                    throw new ParsingException(source(ctx), "Unsupported field name pattern [{}]", lit);
+                }
+            } else {
+                ne = (NamedExpression) exp;
+            }
+            checker.accept(ne);
+            names.add(ne);
+        }
+
+        return names;
+    }
+
+    @Override
     public List<NamedExpression> visitQualifiedNamePatterns(EsqlBaseParser.QualifiedNamePatternsContext ctx) {
         return visitQualifiedNamePatterns(ctx, ne -> {});
     }
@@ -632,12 +668,11 @@ public abstract class ExpressionBuilder extends IdentifierBuilder {
     @Override
     public Alias visitRenameClause(EsqlBaseParser.RenameClauseContext ctx) {
         Source src = source(ctx);
-        NamedExpression newName = visitQualifiedNamePattern(ctx.newName);
-        NamedExpression oldName = visitQualifiedNamePattern(ctx.oldName);
+        NamedExpression newName = (NamedExpression) expression(ctx.newName);
+        NamedExpression oldName = (NamedExpression) expression(ctx.oldName);
         if (newName instanceof UnresolvedNamePattern || oldName instanceof UnresolvedNamePattern) {
             throw new ParsingException(src, "Using wildcards [*] in RENAME is not allowed [{}]", src.text());
         }
-
         return new Alias(src, newName.name(), oldName);
     }
 
@@ -649,13 +684,19 @@ public abstract class ExpressionBuilder extends IdentifierBuilder {
         return newName == null ? enrichField : new Alias(src, newName.name(), enrichField);
     }
 
-    private NamedExpression enrichFieldName(EsqlBaseParser.QualifiedNamePatternContext ctx) {
-        return visitQualifiedNamePattern(ctx, ne -> {
-            if (ne instanceof UnresolvedNamePattern up) {
-                var src = ne.source();
-                throw new ParsingException(src, "Using wildcards [*] in ENRICH WITH projections is not allowed [{}]", up.pattern());
-            }
-        });
+    private NamedExpression enrichFieldName(EsqlBaseParser.QualifiedNamePatternOrParamContext ctx) {
+        if (ctx == null) {
+            return null;
+        }
+        Expression field = expression(ctx);
+        Source src = source(ctx);
+        if (field instanceof UnresolvedAttribute ua) {
+            return ua;
+        } else if (field instanceof UnresolvedNamePattern up) {
+            throw new ParsingException(src, "Using wildcards [*] in ENRICH WITH projections is not allowed [{}]", up.pattern());
+        } else {
+            throw new ParsingException(src, "Invalid ENRICH field [{}]", field);
+        }
     }
 
     @Override
@@ -726,7 +767,7 @@ public abstract class ExpressionBuilder extends IdentifierBuilder {
     private Object visitParam(EsqlBaseParser.ParamsContext ctx, QueryParam param) {
         Source source = source(ctx);
         DataType type = param.type();
-        return new Literal(source, param.value(), type);
+        return param.isField() ? new UnresolvedAttribute(source, (String) param.value()) : new Literal(source, param.value(), type);
     }
 
     QueryParam paramByToken(TerminalNode node) {
