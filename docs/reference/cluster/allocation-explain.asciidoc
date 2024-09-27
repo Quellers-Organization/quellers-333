@@ -206,7 +206,7 @@ primary shard that has reached the maximum number of allocation retry attempts.
 This message indicates that the cluster was previously unable to
 allocate this shard and chose to put a hold on further attempts.
 This is done to avoid burdening the cluster with repeated requests that will fail.
-If no other NO decisions are present, then the transient allocation issue
+If no other `no` decisions are present, then the transient allocation issue
 that caused these failures has most likely been resolved, and you can use the
 <<cluster-reroute,the cluster reroute API>> to retry allocation.
 
