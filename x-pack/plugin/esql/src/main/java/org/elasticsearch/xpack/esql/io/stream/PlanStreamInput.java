@@ -62,9 +62,11 @@ public final class PlanStreamInput extends NamedWriteableAwareStreamInput
 
     private final Map<Integer, Block> cachedBlocks = new HashMap<>();
 
-    private Attribute[] attributesCache = new Attribute[64];
+    private Attribute[] attributesCache = new Attribute[1024];
 
-    private EsField[] esFieldsCache = new EsField[64];
+    private EsField[] esFieldsCache = new EsField[1024];
+
+    private String[] stringCache = new String[1024];
 
     // hook for nameId, where can cache and map, for now just return a NameId of the same long value.
     private final LongFunction<NameId> nameIdFunction;
@@ -221,7 +223,7 @@ public final class PlanStreamInput extends NamedWriteableAwareStreamInput
             // it's safe to cast to int, since the max value for this is {@link PlanStreamOutput#MAX_SERIALIZED_ATTRIBUTES}
             int cacheId = Math.toIntExact(readZLong());
             if (cacheId < 0) {
-                String className = readString();
+                String className = readCachedString();
                 Writeable.Reader<? extends EsField> reader = EsField.getReader(className);
                 cacheId = -1 - cacheId;
                 EsField result = reader.read(this);
@@ -231,9 +233,28 @@ public final class PlanStreamInput extends NamedWriteableAwareStreamInput
                 return (A) esFieldFromCache(cacheId);
             }
         } else {
-            String className = readString();
+            String className = readCachedString();
             Writeable.Reader<? extends EsField> reader = EsField.getReader(className);
             return (A) reader.read(this);
+        }
+    }
+
+    /**
+     * Reads a cached string, serialized with {@link PlanStreamOutput#writeCachedString(String)}.
+     */
+    @Override
+    public String readCachedString() throws IOException {
+        if (getTransportVersion().before(TransportVersions.ESQL_CACHED_STRING_SERIALIZATION)) {
+            return readString();
+        }
+        int cacheId = Math.toIntExact(readZLong());
+        if (cacheId < 0) {
+            String string = readString();
+            cacheId = -1 - cacheId;
+            cacheString(cacheId, string);
+            return string;
+        } else {
+            return stringFromCache(cacheId);
         }
     }
 
@@ -257,4 +278,19 @@ public final class PlanStreamInput extends NamedWriteableAwareStreamInput
         esFieldsCache[id] = field;
     }
 
+    private String stringFromCache(int id) throws IOException {
+        String value = stringCache[id];
+        if (value == null) {
+            throw new IOException("String not found in serialization cache [" + id + "]");
+        }
+        return value;
+    }
+
+    private void cacheString(int id, String string) {
+        assert id >= 0;
+        if (id >= stringCache.length) {
+            stringCache = ArrayUtil.grow(stringCache);
+        }
+        stringCache[id] = string;
+    }
 }
