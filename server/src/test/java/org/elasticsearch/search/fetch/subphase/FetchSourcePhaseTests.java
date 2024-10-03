@@ -13,6 +13,7 @@ import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.index.memory.MemoryIndex;
 import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.bytes.BytesReference;
+import org.elasticsearch.index.mapper.MappingLookup;
 import org.elasticsearch.index.query.SearchExecutionContext;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.fetch.FetchContext;
@@ -191,6 +192,7 @@ public class FetchSourcePhaseTests extends ESTestCase {
         SearchExecutionContext sec = mock(SearchExecutionContext.class);
         when(sec.isSourceEnabled()).thenReturn(sourceBuilder != null);
         when(fetchContext.getSearchExecutionContext()).thenReturn(sec);
+        when(sec.getMappingLookup()).thenReturn(MappingLookup.EMPTY);
 
         final SearchHit searchHit = SearchHit.unpooled(1, null, nestedIdentity);
 

@@ -28,7 +28,7 @@ public final class FetchSourcePhase implements FetchSubPhase {
             return null;
         }
         assert fetchSourceContext.fetchSource();
-        SourceFilter sourceFilter = fetchSourceContext.filter();
+        SourceFilter sourceFilter = fetchSourceContext.filter(fetchContext.getSearchExecutionContext().getMappingLookup());
         final boolean filterExcludesAll = sourceFilter.excludesAll();
         return new FetchSubPhaseProcessor() {
             private int fastPath;
@@ -47,7 +47,7 @@ public final class FetchSourcePhase implements FetchSubPhase {
             public void process(HitContext hitContext) {
                 String index = fetchContext.getIndexName();
                 if (fetchContext.getSearchExecutionContext().isSourceEnabled() == false) {
-                    if (fetchSourceContext.hasFilter()) {
+                    if (sourceFilter.isEmpty() == false) {
                         throw new IllegalArgumentException(
                             "unable to fetch fields from _source field: _source is disabled in the mappings for index [" + index + "]"
                         );
@@ -62,7 +62,7 @@ public final class FetchSourcePhase implements FetchSubPhase {
                 Source source = hitContext.source();
 
                 // If this is a parent document and there are no source filters, then add the source as-is.
-                if (nestedHit == false && fetchSourceContext.hasFilter() == false) {
+                if (nestedHit == false && sourceFilter.isEmpty()) {
                     hitContext.hit().sourceRef(source.internalSourceRef());
                     fastPath++;
                     return;

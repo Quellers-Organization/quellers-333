@@ -9,7 +9,6 @@ setup:
                 bigint:
                   type: keyword
 
-
   - do:
       index:
         index:  test_1
@@ -188,3 +187,150 @@ setup:
   - lt: { hits.hits.0.fields.d.0: 3.141 }
   - gte: { hits.hits.0.fields.d.0: 3.14 }
 
+---
+"Include embeddings in _source by default":
+  - requires:
+      cluster_features: "search.hide_vectors_in_source"
+      reason: vector _source filtering added in 8.16.0
+
+  - do:
+      indices.create:
+        index: vector-test
+        body:
+          mappings:
+            properties:
+              text:
+                type: text
+              sparse:
+                type: sparse_vector
+              dense:
+                type: dense_vector
+                dims: 3
+
+  - do:
+      index:
+        index: vector-test
+        id: 1
+        body:
+          text: running is good for you
+          sparse:
+            running: 2.4097164
+            good: 2.170997
+            run: 2.052153
+            race: 0.1
+          dense: [1.0, 2.0, 3.0]
+        refresh: true
+
+  - do:
+      search:
+        index: vector-test
+        body:
+          query:
+            match:
+              text: running
+
+  - match: { hits.total.value: 1 }
+  - match: { hits.hits.0._id: "1" }
+  - exists: hits.hits.0._source.text
+  - exists: hits.hits.0._source.sparse
+  - exists: hits.hits.0._source.dense
+
+---
+"Exclude embeddings from _source":
+  - requires:
+      cluster_features: "search.hide_vectors_in_source"
+      reason: vector _source filtering added in 8.16.0
+
+  - do:
+      indices.create:
+        index: vector-test
+        body:
+          mappings:
+            properties:
+              text:
+                type: text
+              sparse:
+                type: sparse_vector
+              dense:
+                type: dense_vector
+                dims: 3
+
+  - do:
+      index:
+        index: vector-test
+        id: 1
+        body:
+          text: running is good for you
+          sparse:
+            running: 2.4097164
+            good: 2.170997
+            run: 2.052153
+            race: 0.1
+          dense: [1.0, 2.0, 3.0]
+        refresh: true
+
+  - do:
+      search:
+        index: vector-test
+        body:
+          _source:
+            include_vectors: false
+          query:
+            match:
+              text: running
+
+  - match: { hits.total.value: 1 }
+  - match: { hits.hits.0._id: "1" }
+  - exists: hits.hits.0._source.text
+  - not_exists: hits.hits.0._source.sparse
+  - not_exists: hits.hits.0._source.dense
+
+---
+"Explicitly include embeddings in _source":
+  - requires:
+      cluster_features: "search.hide_vectors_in_source"
+      reason: vector _source filtering added in 8.16.0
+
+  - do:
+      indices.create:
+        index: vector-test
+        body:
+          mappings:
+            properties:
+              text:
+                type: text
+              sparse:
+                type: sparse_vector
+              dense:
+                type: dense_vector
+                dims: 3
+
+  - do:
+      index:
+        index: vector-test
+        id: 1
+        body:
+          text: running is good for you
+          sparse:
+            running: 2.4097164
+            good: 2.170997
+            run: 2.052153
+            race: 0.1
+          dense: [1.0, 2.0, 3.0]
+        refresh: true
+
+  - do:
+      search:
+        index: vector-test
+        body:
+          _source:
+            include_vectors: true
+          query:
+            match:
+              text: running
+
+  - match: { hits.total.value: 1 }
+  - match: { hits.hits.0._id: "1" }
+  - exists: hits.hits.0._source.text
+  - exists: hits.hits.0._source.sparse
+  - exists: hits.hits.0._source.dense

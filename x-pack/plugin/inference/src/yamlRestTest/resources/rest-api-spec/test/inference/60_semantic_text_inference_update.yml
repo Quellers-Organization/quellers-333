@@ -65,7 +65,10 @@ setup:
       get:
         index: test-index
         id: doc_1
+        _source_include_vectors: true
 
+  - exists: _source.sparse_field.inference.chunks.0.embeddings
+  - exists: _source.dense_field.inference.chunks.0.embeddings
   - set: { _source.sparse_field.inference.chunks.0.embeddings: sparse_field_embedding }
   - set: { _source.dense_field.inference.chunks.0.embeddings: dense_field_embedding }
 
@@ -81,6 +84,7 @@ setup:
       get:
         index: test-index
         id: doc_1
+        _source_include_vectors: true
 
   - match:  { _source.sparse_field.text: "inference test" }
   - match:  { _source.sparse_field.inference.chunks.0.text: "inference test" }
@@ -105,6 +109,7 @@ setup:
       get:
         index: test-index
         id: doc_1
+        _source_include_vectors: true
 
   - match:  { _source.sparse_field.text: "inference test" }
   - match:  { _source.sparse_field.inference.chunks.0.text: "inference test" }
@@ -123,6 +128,7 @@ setup:
       get:
         index: test-index
         id: doc_1
+        _source_include_vectors: true
 
   - match:  { _source.sparse_field.text: "I am a test" }
   - match:  { _source.sparse_field.inference.chunks.0.text: "I am a test" }
@@ -143,6 +149,7 @@ setup:
       get:
         index: test-index
         id: doc_1
+        _source_include_vectors: true
 
   - match:  { _source.sparse_field.text: "updated inference test" }
   - match:  { _source.sparse_field.inference.chunks.0.text: "updated inference test" }
@@ -161,6 +168,7 @@ setup:
       get:
         index: test-index
         id: doc_1
+        _source_include_vectors: true
 
   - match:  { _source.sparse_field.text: "bulk inference test" }
   - match:  { _source.sparse_field.inference.chunks.0.text: "bulk inference test" }
@@ -203,6 +211,7 @@ setup:
       get:
         index: test-copy-to-index
         id: doc_1
+        _source_include_vectors: true
 
   - match: { _source.sparse_field.text: "sparse data 1" }
   - length: { _source.sparse_field.inference.chunks: 1 }
@@ -230,6 +239,7 @@ setup:
       get:
         index: test-copy-to-index
         id: doc_1
+        _source_include_vectors: true
 
   - match: { _source.sparse_field.text: "sparse data 1" }
   - length: { _source.sparse_field.inference.chunks: 2 }
@@ -257,6 +267,7 @@ setup:
       get:
         index: test-copy-to-index
         id: doc_1
+        _source_include_vectors: true
 
   - match: { _source.sparse_field.text: "sparse data 1" }
   - length: { _source.sparse_field.inference.chunks: 2 }
@@ -282,6 +293,7 @@ setup:
       get:
         index: test-index
         id: doc_1
+        _source_include_vectors: true
 
   - match: { _source.sparse_field.text: "inference test" }
   - match: { _source.sparse_field.inference.chunks.0.text: "inference test" }
@@ -346,6 +358,7 @@ setup:
       get:
         index: test-copy-to-index
         id: doc_1
+        _source_include_vectors: true
 
   - length: { _source.sparse_field.inference.chunks: 2 }
   - match: { _source.sparse_field.inference.chunks.1.text: "sparse data 2" }
@@ -365,6 +378,7 @@ setup:
       get:
         index: test-copy-to-index
         id: doc_1
+        _source_include_vectors: true
 
   - match: { _source.sparse_field.text: "sparse data 1" }
   - length: { _source.sparse_field.inference.chunks: 2 }
@@ -409,6 +423,7 @@ setup:
       get:
         index: test-copy-to-index
         id: doc_1
+        _source_include_vectors: true
 
   - match: { _source.sparse_field.text: null }
   - length: { _source.sparse_field.inference.chunks: 1 }
@@ -430,6 +445,7 @@ setup:
       get:
         index: test-copy-to-index
         id: doc_1
+        _source_include_vectors: true
 
   - match: { _source.sparse_field.text: null }
   - length: { _source.sparse_field.inference.chunks: 1 }
@@ -534,6 +550,7 @@ setup:
       get:
         index: test-index
         id: doc_1
+        _source_include_vectors: true
 
   - match: { _source.sparse_field.text: "updated inference test" }
   - exists: _source.sparse_field.inference.chunks.0.embeddings
@@ -580,6 +597,7 @@ setup:
       get:
         index: test-index
         id: doc_1
+        _source_include_vectors: true
 
   - match: { _source.sparse_field.text: "inference test" }
   - exists: _source.sparse_field.inference.chunks.0.embeddings
@@ -602,6 +620,7 @@ setup:
       get:
         index: test-index
         id: doc_1
+        _source_include_vectors: true
 
   - match: { _source.sparse_field.text: "updated inference test" }
   - exists: _source.sparse_field.inference.chunks.0.embeddings
@@ -610,3 +629,144 @@ setup:
   - exists: _source.dense_field.inference.chunks.0.embeddings
   - match: { _source.dense_field.inference.chunks.0.text: "another updated inference test" }
   - match: { _source.non_inference_field: "updated non inference test" }
+
+---
+"Source filtering excludes semantic_text embeddings by default":
+  - requires:
+      cluster_features: "search.hide_vectors_in_source"
+      reason: semantic_text _source filtering added in 8.16.0
+
+  - do:
+      index:
+        index: test-index
+        id: doc_1
+        body:
+          sparse_field: "inference test"
+          dense_field: "another inference test"
+          non_inference_field: "non inference test"
+
+  - do:
+      bulk:
+        index: test-index
+        _source: true
+        body:
+          - '{"update": {"_id": "doc_1"}}'
+          - '{"doc":{"sparse_field": "I am a test", "dense_field": "I am a teapot"}}'
+
+  - length: { items: 1 }
+  - match: { items.0.update.get._source.sparse_field.text: "I am a test" }
+  - match: { items.0.update.get._source.dense_field.text: "I am a teapot" }
+  - not_exists: items.0.update.get._source.sparse_field.inference
+  - not_exists: items.0.update.get._source.dense_field.inference
+
+  # Don't update the semantic_text fields because the Update API returns _source in its pre-indexed form (i.e. before
+  # embeddings are calculated for any updated semantic_text fields). Thus, updating a semantic_text field overwrites
+  # the sub-field structure we are testing the filtering of here.
+  - do:
+      update:
+        index: test-index
+        id: doc_1
+        _source: true
+        body:
+          doc:
+            non_inference_field: "another non inference test"
+
+  - match: { get._source.non_inference_field: "another non inference test" }
+  - match: { get._source.sparse_field.text: "I am a test" }
+  - match: { get._source.dense_field.text: "I am a teapot" }
+  - not_exists: get._source.sparse_field.inference
+  - not_exists: get._source.dense_field.inference
+
+---
+"Source filtering excludes semantic_text embeddings":
+  - requires:
+      cluster_features: "search.hide_vectors_in_source"
+      reason: semantic_text _source filtering added in 8.16.0
+
+  - do:
+      index:
+        index: test-index
+        id: doc_1
+        body:
+          sparse_field: "inference test"
+          dense_field: "another inference test"
+          non_inference_field: "non inference test"
+
+  - do:
+      bulk:
+        index: test-index
+        _source_include_vectors: false
+        body:
+          - '{"update": {"_id": "doc_1"}}'
+          - '{"doc":{"sparse_field": "I am a test", "dense_field": "I am a teapot"}}'
+
+  - length: { items: 1 }
+  - match: { items.0.update.get._source.sparse_field.text: "I am a test" }
+  - match: { items.0.update.get._source.dense_field.text: "I am a teapot" }
+  - not_exists: items.0.update.get._source.sparse_field.inference
+  - not_exists: items.0.update.get._source.dense_field.inference
+
+  # Don't update the semantic_text fields because the Update API returns _source in its pre-indexed form (i.e. before
+  # embeddings are calculated for any updated semantic_text fields). Thus, updating a semantic_text field overwrites
+  # the sub-field structure we are testing the filtering of here.
+  - do:
+      update:
+        index: test-index
+        id: doc_1
+        _source_include_vectors: false
+        body:
+          doc:
+            non_inference_field: "another non inference test"
+
+  - match: { get._source.non_inference_field: "another non inference test" }
+  - match: { get._source.sparse_field.text: "I am a test" }
+  - match: { get._source.dense_field.text: "I am a teapot" }
+  - not_exists: get._source.sparse_field.inference
+  - not_exists: get._source.dense_field.inference
+
+---
+"Source filtering includes semantic_text embeddings":
+  - requires:
+      cluster_features: "search.hide_vectors_in_source"
+      reason: semantic_text _source filtering added in 8.16.0
+
+  - do:
+      index:
+        index: test-index
+        id: doc_1
+        body:
+          sparse_field: "inference test"
+          dense_field: "another inference test"
+          non_inference_field: "non inference test"
+
+  - do:
+      bulk:
+        index: test-index
+        _source_include_vectors: true
+        body:
+          - '{"update": {"_id": "doc_1"}}'
+          - '{"doc":{"sparse_field": "I am a test", "dense_field": "I am a teapot"}}'
+
+  - length: { items: 1 }
+  - match: { items.0.update.get._source.sparse_field.text: "I am a test" }
+  - match: { items.0.update.get._source.dense_field.text: "I am a teapot" }
+  - exists: items.0.update.get._source.sparse_field.inference
+  - exists: items.0.update.get._source.dense_field.inference
+
+  # Don't update the semantic_text fields because the Update API returns _source in its pre-indexed form (i.e. before
+  # embeddings are calculated for any updated semantic_text fields). Thus, updating a semantic_text field overwrites
+  # the sub-field structure we are testing the filtering of here.
+  - do:
+      update:
+        index: test-index
+        id: doc_1
+        _source_include_vectors: true
+        body:
+          doc:
+            non_inference_field: "another non inference test"
+
+  - match: { get._source.non_inference_field: "another non inference test" }
+  - match: { get._source.sparse_field.text: "I am a test" }
+  - match: { get._source.dense_field.text: "I am a teapot" }
+  - exists: get._source.sparse_field.inference
+  - exists: get._source.dense_field.inference

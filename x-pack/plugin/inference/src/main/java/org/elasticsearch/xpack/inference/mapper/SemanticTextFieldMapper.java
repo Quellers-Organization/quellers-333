@@ -381,6 +381,11 @@ public class SemanticTextFieldMapper extends FieldMapper implements InferenceFie
         return XContentMapValues.extractValue(TEXT_FIELD, fieldValueMap);
     }
 
+    @Override
+    public String getInferenceFieldName() {
+        return SemanticTextField.getInferenceFieldName(fullPath());
+    }
+
     public static class SemanticTextFieldType extends SimpleMappedFieldType {
         private final String inferenceId;
         private final String searchInferenceId;

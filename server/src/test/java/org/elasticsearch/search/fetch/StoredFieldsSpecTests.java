@@ -9,6 +9,8 @@
 
 package org.elasticsearch.search.fetch;
 
+import org.elasticsearch.index.mapper.MappingLookup;
+import org.elasticsearch.index.query.SearchExecutionContext;
 import org.elasticsearch.script.Script;
 import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.elasticsearch.search.fetch.subphase.FetchSourcePhase;
@@ -71,6 +73,11 @@ public class StoredFieldsSpecTests extends ESTestCase {
         SearchContext sc = mock(SearchContext.class);
         when(sc.fetchSourceContext()).thenReturn(sourceBuilder.fetchSource());
         when(sc.storedFieldsContext()).thenReturn(sourceBuilder.storedFields());
+
+        SearchExecutionContext searchExecutionContext = mock(SearchExecutionContext.class);
+        when(searchExecutionContext.getMappingLookup()).thenReturn(MappingLookup.EMPTY);
+        when(sc.getSearchExecutionContext()).thenReturn(searchExecutionContext);
+
         ScriptFieldsContext scriptContext = new ScriptFieldsContext();
         if (sourceBuilder.scriptFields() != null) {
             for (SearchSourceBuilder.ScriptField scriptField : sourceBuilder.scriptFields()) {

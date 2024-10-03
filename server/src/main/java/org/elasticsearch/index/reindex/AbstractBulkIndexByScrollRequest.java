@@ -14,6 +14,8 @@ import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.core.Nullable;
 import org.elasticsearch.script.Script;
+import org.elasticsearch.search.builder.SearchSourceBuilder;
+import org.elasticsearch.search.fetch.subphase.FetchSourceContext;
 import org.elasticsearch.tasks.TaskId;
 
 import java.io.IOException;
@@ -41,6 +43,24 @@ public abstract class AbstractBulkIndexByScrollRequest<Self extends AbstractBulk
      */
     protected AbstractBulkIndexByScrollRequest(SearchRequest searchRequest, boolean setDefaults) {
         super(searchRequest, setDefaults);
+
+        SearchSourceBuilder searchSourceBuilder = searchRequest.source();
+        if (searchSourceBuilder == null) {
+            searchSourceBuilder = new SearchSourceBuilder();
+            searchRequest.source(searchSourceBuilder);
+        }
+
+        FetchSourceContext fetchSourceContext = searchSourceBuilder.fetchSource();
+        if (fetchSourceContext == null) {
+            // By default, use a fetch source context that gets vector fields so that reindex and update-by-query use existing embeddings
+            searchSourceBuilder.fetchSource(FetchSourceContext.FETCH_SOURCE_WITH_VECTORS);
+        } else if (fetchSourceContext.includeVectors() == null) {
+            // If the user did not set a value for include_vectors, set it to true so that reindex and update-by-query use existing
+            // embeddings
+            searchSourceBuilder.fetchSource(
+                FetchSourceContext.of(fetchSourceContext.fetchSource(), fetchSourceContext.includes(), fetchSourceContext.excludes(), true)
+            );
+        }
     }
 
     /**

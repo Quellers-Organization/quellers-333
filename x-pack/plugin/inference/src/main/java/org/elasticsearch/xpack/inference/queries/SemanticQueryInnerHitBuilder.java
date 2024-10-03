@@ -91,7 +91,11 @@ public class SemanticQueryInnerHitBuilder implements Writeable, ToXContentObject
 
         return new InnerHitBuilder(fieldName).setFrom(from)
             .setSize(size)
-            .setFetchSourceContext(FetchSourceContext.of(true, null, new String[] { SemanticTextField.getEmbeddingsFieldName(fieldName) }));
+            .setFetchSourceContext(
+                // Create a fetch source context that includes vectors (i.e. the semantic_text inference field), but excludes the embeddings
+                // field. This leaves only the chunk text field, which is what we want.
+                FetchSourceContext.of(true, null, new String[] { SemanticTextField.getEmbeddingsFieldName(fieldName) }, true)
+            );
     }
 
     @Override

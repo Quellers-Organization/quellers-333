@@ -34,4 +34,11 @@ public interface InferenceFieldMapper {
      * @return The field's original value, or {@code null} if none was provided
      */
     Object getOriginalValue(Map<String, Object> sourceAsMap);
+
+    /**
+     * Get the field's inference field name
+     *
+     * @return The full path to the field's inference field name
+     */
+    String getInferenceFieldName();
 }
