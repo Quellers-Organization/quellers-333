@@ -7,9 +7,8 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-module org.elasticsearch.entitlement.agent {
-    requires java.instrument;
-    requires org.objectweb.asm;
-    requires org.elasticsearch.entitlement.bridge;
-    requires org.elasticsearch.base; // for @SuppressForbidden
+module org.elasticsearch.entitlement.bridge {
+    uses org.elasticsearch.entitlement.api.EntitlementChecks;
+
+    exports org.elasticsearch.entitlement.api;
 }

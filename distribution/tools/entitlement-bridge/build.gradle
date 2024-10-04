@@ -7,16 +7,12 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-package org.elasticsearch.entitlement.runtime.api;
+apply plugin: 'elasticsearch.build'
 
-public class EntitlementChecks {
-    static boolean isAgentBooted = false;
-
-    public static void setAgentBooted() {
-        isAgentBooted = true;
-    }
-
-    public static boolean isAgentBooted() {
-        return isAgentBooted;
-    }
+dependencies {
 }
+
+tasks.named('forbiddenApisMain').configure {
+  replaceSignatureFiles 'jdk-signatures'
+}
+

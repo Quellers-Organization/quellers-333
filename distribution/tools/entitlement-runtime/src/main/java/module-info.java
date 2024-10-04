@@ -8,7 +8,10 @@
  */
 
 module org.elasticsearch.entitlement.runtime {
-    requires org.elasticsearch.base;
+    requires org.elasticsearch.entitlement.bridge;
+    requires org.elasticsearch.server;
 
-    exports org.elasticsearch.entitlement.runtime.api to org.elasticsearch.entitlement.agent;
+    exports org.elasticsearch.entitlement.runtime.api;
+
+    provides org.elasticsearch.entitlement.api.EntitlementChecks with org.elasticsearch.entitlement.runtime.api.ElasticsearchEntitlementManager;
 }

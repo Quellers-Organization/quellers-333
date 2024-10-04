@@ -7,9 +7,18 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-module org.elasticsearch.entitlement.agent {
-    requires java.instrument;
-    requires org.objectweb.asm;
-    requires org.elasticsearch.entitlement.bridge;
-    requires org.elasticsearch.base; // for @SuppressForbidden
+package org.elasticsearch.entitlement.runtime.internals;
+
+/**
+ * Don't export this from the module. Just don't.
+ */
+public class EntitlementInternals {
+    /**
+     * When false, entitlement rules are not enforced; all operations are allowed.
+     */
+    public static volatile boolean isActive = false;
+
+    public static void reset() {
+        isActive = false;
+    }
 }
