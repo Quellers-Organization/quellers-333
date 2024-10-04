@@ -12,8 +12,11 @@ import org.elasticsearch.geometry.Circle;
 import org.elasticsearch.geometry.Geometry;
 import org.elasticsearch.geometry.Point;
 import org.elasticsearch.geometry.utils.WellKnownBinary;
+import org.elasticsearch.xpack.esql.core.expression.Alias;
 import org.elasticsearch.xpack.esql.core.expression.Expression;
 import org.elasticsearch.xpack.esql.core.expression.Literal;
+import org.elasticsearch.xpack.esql.core.expression.NameId;
+import org.elasticsearch.xpack.esql.core.expression.ReferenceAttribute;
 import org.elasticsearch.xpack.esql.core.expression.predicate.logical.And;
 import org.elasticsearch.xpack.esql.core.tree.Source;
 import org.elasticsearch.xpack.esql.core.type.DataType;
@@ -25,17 +28,39 @@ import org.elasticsearch.xpack.esql.expression.predicate.operator.comparison.Esq
 import org.elasticsearch.xpack.esql.optimizer.LocalPhysicalOptimizerContext;
 import org.elasticsearch.xpack.esql.optimizer.PhysicalOptimizerRules;
 import org.elasticsearch.xpack.esql.plan.physical.EsQueryExec;
+import org.elasticsearch.xpack.esql.plan.physical.EvalExec;
 import org.elasticsearch.xpack.esql.plan.physical.FilterExec;
 import org.elasticsearch.xpack.esql.plan.physical.PhysicalPlan;
 
 import java.nio.ByteOrder;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+import static org.elasticsearch.xpack.esql.optimizer.rules.physical.local.PushFiltersToSource.canPushSpatialFunctionToSource;
 
 /**
  * When a spatial distance predicate can be pushed down to lucene, this is done by capturing the distance within the same function.
  * In principle this is like re-writing the predicate:
  * <pre>WHERE ST_DISTANCE(field, TO_GEOPOINT("POINT(0 0)")) &lt;= 10000</pre>
  * as:
- * <pre>WHERE ST_INTERSECTS(field, TO_GEOSHAPE("CIRCLE(0,0,10000)"))</pre>
+ * <pre>WHERE ST_INTERSECTS(field, TO_GEOSHAPE("CIRCLE(0,0,10000)"))</pre>.
+ * <p>
+ * In addition, since the distance could be calculated in a preceding <code>EVAL</code> command, we also need to consider the case:
+ * <pre>
+ *     FROM index
+ *     | EVAL distance = ST_DISTANCE(field, TO_GEOPOINT("POINT(0 0)"))
+ *     | WHERE distance &lt;= 10000
+ * </pre>
+ * And re-write that as:
+ * <pre>
+ *     FROM index
+ *     | WHERE ST_INTERSECTS(field, TO_GEOSHAPE("CIRCLE(0,0,10000)"))
+ *     | EVAL distance = ST_DISTANCE(field, TO_GEOPOINT("POINT(0 0)"))
+ * </pre>
+ * Note that the WHERE clause is both rewritten to an intersection and pushed down closer to the <code>EsQueryExec</code>,
+ * which allows the predicate to be pushed down to Lucene in a later rule, <code>PushFiltersToSource</code>.
  */
 public class EnableSpatialDistancePushdown extends PhysicalOptimizerRules.ParameterizedOptimizerRule<
     FilterExec,
@@ -44,23 +69,106 @@ public class EnableSpatialDistancePushdown extends PhysicalOptimizerRules.Parame
     @Override
     protected PhysicalPlan rule(FilterExec filterExec, LocalPhysicalOptimizerContext ctx) {
         PhysicalPlan plan = filterExec;
-        if (filterExec.child() instanceof EsQueryExec) {
-            // Find and rewrite any binary comparisons that involve a distance function and a literal
-            var rewritten = filterExec.condition().transformDown(EsqlBinaryComparison.class, comparison -> {
-                ComparisonType comparisonType = ComparisonType.from(comparison.getFunctionType());
-                if (comparison.left() instanceof StDistance dist && comparison.right().foldable()) {
-                    return rewriteComparison(comparison, dist, comparison.right(), comparisonType);
-                } else if (comparison.right() instanceof StDistance dist && comparison.left().foldable()) {
-                    return rewriteComparison(comparison, dist, comparison.left(), ComparisonType.invert(comparisonType));
-                }
-                return comparison;
-            });
-            if (rewritten.equals(filterExec.condition()) == false) {
-                plan = new FilterExec(filterExec.source(), filterExec.child(), rewritten);
-            }
+        if (filterExec.child() instanceof EsQueryExec esQueryExec) {
+            plan = rewrite(filterExec, esQueryExec);
+        } else if (filterExec.child() instanceof EvalExec evalExec && evalExec.child() instanceof EsQueryExec esQueryExec) {
+            plan = rewrite(filterExec, evalExec, esQueryExec);
         }
 
         return plan;
+    }
+
+    private FilterExec rewrite(FilterExec filterExec, EsQueryExec esQueryExec) {
+        // Find and rewrite any binary comparisons that involve a distance function and a literal
+        var rewritten = filterExec.condition().transformDown(EsqlBinaryComparison.class, comparison -> {
+            ComparisonType comparisonType = ComparisonType.from(comparison.getFunctionType());
+            if (comparison.left() instanceof StDistance dist && comparison.right().foldable()) {
+                return rewriteComparison(comparison, dist, comparison.right(), comparisonType);
+            } else if (comparison.right() instanceof StDistance dist && comparison.left().foldable()) {
+                return rewriteComparison(comparison, dist, comparison.left(), ComparisonType.invert(comparisonType));
+            }
+            return comparison;
+        });
+        if (rewritten.equals(filterExec.condition()) == false) {
+            return new FilterExec(filterExec.source(), esQueryExec, rewritten);
+        }
+        return filterExec;
+    }
+
+    private void getPushableDistances(List<Alias> aliases, Map<NameId, StDistance> distances, Map<NameId, Alias> others) {
+        aliases.forEach(alias -> {
+            if (alias.child() instanceof StDistance distance && canPushSpatialFunctionToSource(distance)) {
+                distances.put(alias.id(), distance);
+            } else if (alias.child() instanceof ReferenceAttribute ref && distances.containsKey(ref.id())) {
+                StDistance distance = distances.get(ref.id());
+                distances.put(alias.id(), distance);
+            } else {
+                others.put(alias.id(), alias);
+            }
+        });
+    }
+
+    private PhysicalPlan rewrite(FilterExec filterExec, EvalExec evalExec, EsQueryExec esQueryExec) {
+        Map<NameId, StDistance> distances = new LinkedHashMap<>();
+        Map<NameId, Alias> others = new LinkedHashMap<>();
+        getPushableDistances(evalExec.fields(), distances, others);
+        if (distances.isEmpty() == false) {
+            // Find and rewrite any binary comparisons that involve a distance function and a literal
+            var rewritten = filterExec.condition().transformDown(EsqlBinaryComparison.class, comparison -> {
+                ComparisonType comparisonType = ComparisonType.from(comparison.getFunctionType());
+                if (comparison.left() instanceof ReferenceAttribute r && distances.containsKey(r.id()) && comparison.right().foldable()) {
+                    StDistance dist = distances.get(r.id());
+                    return rewriteComparison(comparison, dist, comparison.right(), comparisonType);
+                } else if (comparison.right() instanceof ReferenceAttribute r
+                    && distances.containsKey(r.id())
+                    && comparison.left().foldable()) {
+                        StDistance dist = distances.get(r.id());
+                        return rewriteComparison(comparison, dist, comparison.left(), ComparisonType.invert(comparisonType));
+                    }
+                return comparison;
+            });
+            // If any pushable StDistance functions were found and re-written, we need to re-write the FILTER/EVAL combination
+            if (rewritten.equals(filterExec.condition()) == false) {
+                // Divide the aliases into those that are referenced in the filter and those that are not
+                SplitAliases split = SplitAliases.from(filterExec, evalExec, distances, others);
+
+                // If there are aliases referenced in the filter, keep them before the filter
+                FilterExec filter = split.referencedAliases.isEmpty()
+                    ? new FilterExec(filterExec.source(), esQueryExec, rewritten)
+                    : new FilterExec(filterExec.source(), new EvalExec(evalExec.source(), esQueryExec, split.referencedAliases), rewritten);
+
+                // If there are remaining aliases, we need to keep them after the filter
+                return split.remainingAliases.isEmpty() ? filter : new EvalExec(evalExec.source(), filter, split.remainingAliases);
+            }
+        }
+        return filterExec;
+    }
+
+    private record SplitAliases(List<Alias> referencedAliases, List<Alias> remainingAliases) {
+        private static SplitAliases from(
+            FilterExec filterExec,
+            EvalExec evalExec,
+            Map<NameId, StDistance> distances,
+            Map<NameId, Alias> others
+        ) {
+            // Determine if the filter refers to any of the other fields in the EVAL
+            List<Alias> referencedAliases = new ArrayList<>();
+            filterExec.condition().forEachDown(ReferenceAttribute.class, r -> {
+                if (others.containsKey(r.id())) {
+                    referencedAliases.add(others.remove(r.id()));
+                }
+            });
+            // If there are remaining aliases, we need to keep them after the filter
+            List<Alias> remainingAliases = new ArrayList<>(others.values());
+            // Add back the distance functions, since they might be used in later clauses
+            // TODO: Remove this if we can guarantee that the distance functions are only used in the filter
+            for (Alias alias : evalExec.fields()) {
+                if (distances.containsKey(alias.id())) {
+                    remainingAliases.add(alias);
+                }
+            }
+            return new SplitAliases(referencedAliases, remainingAliases);
+        }
     }
 
     private Expression rewriteComparison(
