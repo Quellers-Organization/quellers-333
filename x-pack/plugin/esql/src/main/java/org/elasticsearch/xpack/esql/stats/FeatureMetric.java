@@ -21,7 +21,6 @@ import org.elasticsearch.xpack.esql.plan.logical.MvExpand;
 import org.elasticsearch.xpack.esql.plan.logical.OrderBy;
 import org.elasticsearch.xpack.esql.plan.logical.Rename;
 import org.elasticsearch.xpack.esql.plan.logical.Row;
-import org.elasticsearch.xpack.esql.plan.logical.meta.MetaFunctions;
 import org.elasticsearch.xpack.esql.plan.logical.show.ShowInfo;
 
 import java.util.BitSet;
@@ -48,8 +47,7 @@ public enum FeatureMetric {
     FROM(EsRelation.class::isInstance),
     DROP(Drop.class::isInstance),
     KEEP(Keep.class::isInstance),
-    RENAME(Rename.class::isInstance),
-    META(MetaFunctions.class::isInstance);
+    RENAME(Rename.class::isInstance);
 
     private Predicate<LogicalPlan> planCheck;
 
