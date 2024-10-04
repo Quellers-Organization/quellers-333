@@ -36,7 +36,6 @@ import org.elasticsearch.search.rank.RankDoc;
 import org.elasticsearch.search.sort.FieldSortBuilder;
 import org.elasticsearch.search.sort.NestedSortBuilder;
 import org.elasticsearch.search.sort.ScoreSortBuilder;
-import org.elasticsearch.search.sort.ShardDocSortField;
 import org.elasticsearch.search.sort.SortBuilder;
 import org.elasticsearch.search.sort.SortOrder;
 import org.elasticsearch.test.ESIntegTestCase;
@@ -191,10 +190,8 @@ public class RankDocRetrieverBuilderIT extends ESIntegTestCase {
         SearchSourceBuilder source = new SearchSourceBuilder();
         StandardRetrieverBuilder standard0 = new StandardRetrieverBuilder();
         // this one retrieves docs 1, 4, and 6
-        standard0.queryBuilder = QueryBuilders.boolQuery()
-            .should(QueryBuilders.constantScoreQuery(QueryBuilders.idsQuery().addIds("doc_1")).boost(10L))
-            .should(QueryBuilders.constantScoreQuery(QueryBuilders.idsQuery().addIds("doc_4")).boost(9L))
-            .should(QueryBuilders.constantScoreQuery(QueryBuilders.idsQuery().addIds("doc_6")).boost(8L));
+        standard0.queryBuilder = QueryBuilders.constantScoreQuery(QueryBuilders.queryStringQuery("quick").defaultField(TEXT_FIELD))
+            .boost(10L);
         StandardRetrieverBuilder standard1 = new StandardRetrieverBuilder();
         // this one retrieves docs 2 and 6 due to prefilter
         standard1.queryBuilder = QueryBuilders.constantScoreQuery(QueryBuilders.termsQuery(ID_FIELD, "doc_2", "doc_3", "doc_6")).boost(20L);
@@ -209,8 +206,8 @@ public class RankDocRetrieverBuilderIT extends ESIntegTestCase {
             null
         );
         // the compound retriever here produces a score for a doc based on the percentage of the queries that it was matched on and
-        // resolves ties based on actual score, and then the doc (we're forcing 1 shard for consistent results)
-        // so ideal rank would be: 6, 2, 1, 3, 4, 7 and with pagination, we'd just omit the first result
+        // resolves ties based on actual score, rank, and then the doc (we're forcing 1 shard for consistent results)
+        // so ideal rank would be: 6, 2, 1, 4, 7, 3 and with pagination, we'd just omit the first result
         source.retriever(
             new CompoundRetrieverWithRankDocs(
                 rankWindowSize,
@@ -227,13 +224,13 @@ public class RankDocRetrieverBuilderIT extends ESIntegTestCase {
         ElasticsearchAssertions.assertResponse(req, resp -> {
             assertNull(resp.pointInTimeId());
             assertNotNull(resp.getHits().getTotalHits());
-            assertThat(resp.getHits().getTotalHits().value, equalTo(6L));
-            assertThat(resp.getHits().getTotalHits().relation, equalTo(TotalHits.Relation.EQUAL_TO));
+            assertThat(resp.getHits().getTotalHits().value(), equalTo(6L));
+            assertThat(resp.getHits().getTotalHits().relation(), equalTo(TotalHits.Relation.EQUAL_TO));
             assertThat(resp.getHits().getAt(0).getId(), equalTo("doc_2"));
             assertThat(resp.getHits().getAt(1).getId(), equalTo("doc_1"));
-            assertThat(resp.getHits().getAt(2).getId(), equalTo("doc_3"));
-            assertThat(resp.getHits().getAt(3).getId(), equalTo("doc_4"));
-            assertThat(resp.getHits().getAt(4).getId(), equalTo("doc_7"));
+            assertThat(resp.getHits().getAt(2).getId(), equalTo("doc_4"));
+            assertThat(resp.getHits().getAt(3).getId(), equalTo("doc_7"));
+            assertThat(resp.getHits().getAt(4).getId(), equalTo("doc_3"));
         });
     }
 
@@ -246,10 +243,8 @@ public class RankDocRetrieverBuilderIT extends ESIntegTestCase {
         SearchSourceBuilder source = new SearchSourceBuilder();
         StandardRetrieverBuilder standard0 = new StandardRetrieverBuilder();
         // this one retrieves docs 1, 4, and 6
-        standard0.queryBuilder = QueryBuilders.boolQuery()
-            .should(QueryBuilders.constantScoreQuery(QueryBuilders.idsQuery().addIds("doc_1")).boost(10L))
-            .should(QueryBuilders.constantScoreQuery(QueryBuilders.idsQuery().addIds("doc_4")).boost(9L))
-            .should(QueryBuilders.constantScoreQuery(QueryBuilders.idsQuery().addIds("doc_6")).boost(8L));
+        standard0.queryBuilder = QueryBuilders.constantScoreQuery(QueryBuilders.queryStringQuery("quick").defaultField(TEXT_FIELD))
+            .boost(10L);
         StandardRetrieverBuilder standard1 = new StandardRetrieverBuilder();
         // this one retrieves docs 2 and 6 due to prefilter
         standard1.queryBuilder = QueryBuilders.constantScoreQuery(QueryBuilders.termsQuery(ID_FIELD, "doc_2", "doc_3", "doc_6")).boost(20L);
@@ -273,15 +268,13 @@ public class RankDocRetrieverBuilderIT extends ESIntegTestCase {
                 )
             )
         );
-        source.size(1);
         source.aggregation(new TermsAggregationBuilder("topic").field(TOPIC_FIELD));
         SearchRequestBuilder req = client().prepareSearch(INDEX).setSource(source);
         ElasticsearchAssertions.assertResponse(req, resp -> {
             assertNull(resp.pointInTimeId());
             assertNotNull(resp.getHits().getTotalHits());
-            assertThat(resp.getHits().getTotalHits().value, equalTo(5L));
-            assertThat(resp.getHits().getTotalHits().relation, equalTo(TotalHits.Relation.EQUAL_TO));
-            assertThat(resp.getHits().getHits().length, equalTo(1));
+            assertThat(resp.getHits().getTotalHits().value(), equalTo(1L));
+            assertThat(resp.getHits().getTotalHits().relation(), equalTo(TotalHits.Relation.EQUAL_TO));
             assertThat(resp.getHits().getAt(0).getId(), equalTo("doc_2"));
             assertNotNull(resp.getAggregations());
             assertNotNull(resp.getAggregations().get("topic"));
@@ -299,10 +292,8 @@ public class RankDocRetrieverBuilderIT extends ESIntegTestCase {
         SearchSourceBuilder source = new SearchSourceBuilder();
         StandardRetrieverBuilder standard0 = new StandardRetrieverBuilder();
         // this one retrieves docs 1, 4, and 6
-        standard0.queryBuilder = QueryBuilders.boolQuery()
-            .should(QueryBuilders.constantScoreQuery(QueryBuilders.idsQuery().addIds("doc_1")).boost(10L))
-            .should(QueryBuilders.constantScoreQuery(QueryBuilders.idsQuery().addIds("doc_4")).boost(9L))
-            .should(QueryBuilders.constantScoreQuery(QueryBuilders.idsQuery().addIds("doc_6")).boost(8L));
+        standard0.queryBuilder = QueryBuilders.constantScoreQuery(QueryBuilders.queryStringQuery("quick").defaultField(TEXT_FIELD))
+            .boost(10L);
         StandardRetrieverBuilder standard1 = new StandardRetrieverBuilder();
         // this one retrieves docs 2 and 6 due to prefilter
         standard1.queryBuilder = QueryBuilders.constantScoreQuery(QueryBuilders.termsQuery(ID_FIELD, "doc_2", "doc_3", "doc_6")).boost(20L);
@@ -317,8 +308,8 @@ public class RankDocRetrieverBuilderIT extends ESIntegTestCase {
             null
         );
         // the compound retriever here produces a score for a doc based on the percentage of the queries that it was matched on and
-        // resolves ties based on actual score, and then the doc (we're forcing 1 shard for consistent results)
-        // so ideal rank would be: 6, 2, 1, 3, 4, 7
+        // resolves ties based on actual score, rank, and then the doc (we're forcing 1 shard for consistent results)
+        // so ideal rank would be: 6, 2, 1, 4, 7, 3
         // with collapsing on topic field we would have 6, 2, 1, 7
         source.retriever(
             new CompoundRetrieverWithRankDocs(
@@ -340,14 +331,15 @@ public class RankDocRetrieverBuilderIT extends ESIntegTestCase {
         ElasticsearchAssertions.assertResponse(req, resp -> {
             assertNull(resp.pointInTimeId());
             assertNotNull(resp.getHits().getTotalHits());
-            assertThat(resp.getHits().getTotalHits().value, equalTo(6L));
-            assertThat(resp.getHits().getTotalHits().relation, equalTo(TotalHits.Relation.EQUAL_TO));
+            assertThat(resp.getHits().getTotalHits().value(), equalTo(6L));
+            assertThat(resp.getHits().getTotalHits().relation(), equalTo(TotalHits.Relation.EQUAL_TO));
             assertThat(resp.getHits().getHits().length, equalTo(4));
             assertThat(resp.getHits().getAt(0).getId(), equalTo("doc_6"));
             assertThat(resp.getHits().getAt(1).getId(), equalTo("doc_2"));
             assertThat(resp.getHits().getAt(1).field(TOPIC_FIELD).getValue().toString(), equalTo("astronomy"));
             assertThat(resp.getHits().getAt(2).getId(), equalTo("doc_1"));
             assertThat(resp.getHits().getAt(2).field(TOPIC_FIELD).getValue().toString(), equalTo("technology"));
+            assertThat(resp.getHits().getAt(2).getInnerHits().get("a").getHits().length, equalTo(3));
             assertThat(resp.getHits().getAt(2).getInnerHits().get("a").getAt(0).getId(), equalTo("doc_4"));
             assertThat(resp.getHits().getAt(2).getInnerHits().get("a").getAt(1).getId(), equalTo("doc_3"));
             assertThat(resp.getHits().getAt(2).getInnerHits().get("a").getAt(2).getId(), equalTo("doc_1"));
@@ -356,15 +348,17 @@ public class RankDocRetrieverBuilderIT extends ESIntegTestCase {
         });
     }
 
-    public void testRankDocsRetrieverWithNestedCollapseAndAggs() {
+    public void testRankDocsRetrieverWithCollapseAndAggs() {
+        // same as above, but we only want to bring back the top result from each subsearch
+        // so that would be 1, 2, and 7
+        // and final rank would be (based on score): 2, 1, 7
+        // aggs should still account for the same docs as the testRankDocsRetriever test, i.e. all but doc_5
         final int rankWindowSize = 10;
         SearchSourceBuilder source = new SearchSourceBuilder();
         StandardRetrieverBuilder standard0 = new StandardRetrieverBuilder();
         // this one retrieves docs 1 and 6 as doc_4 is collapsed to doc_1
-        standard0.queryBuilder = QueryBuilders.boolQuery()
-            .should(QueryBuilders.constantScoreQuery(QueryBuilders.idsQuery().addIds("doc_1")).boost(10L))
-            .should(QueryBuilders.constantScoreQuery(QueryBuilders.idsQuery().addIds("doc_4")).boost(9L))
-            .should(QueryBuilders.constantScoreQuery(QueryBuilders.idsQuery().addIds("doc_6")).boost(8L));
+        standard0.queryBuilder = QueryBuilders.constantScoreQuery(QueryBuilders.queryStringQuery("quick").defaultField(TEXT_FIELD))
+            .boost(10L);
         standard0.collapseBuilder = new CollapseBuilder(TOPIC_FIELD).setInnerHits(
             new InnerHitBuilder("a").addSort(new FieldSortBuilder(DOC_FIELD).order(SortOrder.DESC)).setSize(10)
         );
@@ -382,8 +376,8 @@ public class RankDocRetrieverBuilderIT extends ESIntegTestCase {
             null
         );
         // the compound retriever here produces a score for a doc based on the percentage of the queries that it was matched on and
-        // resolves ties based on actual score, and then the doc (we're forcing 1 shard for consistent results)
-        // so ideal rank would be: 6, 2, 1, 3, 4, 7
+        // resolves ties based on actual score, rank, and then the doc (we're forcing 1 shard for consistent results)
+        // so ideal rank would be: 6, 2, 1, 4, 7, 3
         source.retriever(
             new CompoundRetrieverWithRankDocs(
                 rankWindowSize,
@@ -399,8 +393,8 @@ public class RankDocRetrieverBuilderIT extends ESIntegTestCase {
         ElasticsearchAssertions.assertResponse(req, resp -> {
             assertNull(resp.pointInTimeId());
             assertNotNull(resp.getHits().getTotalHits());
-            assertThat(resp.getHits().getTotalHits().value, equalTo(6L));
-            assertThat(resp.getHits().getTotalHits().relation, equalTo(TotalHits.Relation.EQUAL_TO));
+            assertThat(resp.getHits().getTotalHits().value(), equalTo(5L));
+            assertThat(resp.getHits().getTotalHits().relation(), equalTo(TotalHits.Relation.EQUAL_TO));
             assertThat(resp.getHits().getAt(0).getId(), equalTo("doc_6"));
             assertNotNull(resp.getAggregations());
             assertNotNull(resp.getAggregations().get("topic"));
@@ -433,8 +427,8 @@ public class RankDocRetrieverBuilderIT extends ESIntegTestCase {
             null
         );
         // the compound retriever here produces a score for a doc based on the percentage of the queries that it was matched on and
-        // resolves ties based on actual score, and then the doc (we're forcing 1 shard for consistent results)
-        // so ideal rank would be: 6, 2, 1, 3, 4, 7
+        // resolves ties based on actual score, rank, and then the doc (we're forcing 1 shard for consistent results)
+        // so ideal rank would be: 6, 2, 1, 4, 3, 7
         source.retriever(
             new CompoundRetrieverWithRankDocs(
                 rankWindowSize,
@@ -450,8 +444,8 @@ public class RankDocRetrieverBuilderIT extends ESIntegTestCase {
         ElasticsearchAssertions.assertResponse(req, resp -> {
             assertNull(resp.pointInTimeId());
             assertNotNull(resp.getHits().getTotalHits());
-            assertThat(resp.getHits().getTotalHits().value, equalTo(6L));
-            assertThat(resp.getHits().getTotalHits().relation, equalTo(TotalHits.Relation.EQUAL_TO));
+            assertThat(resp.getHits().getTotalHits().value(), equalTo(6L));
+            assertThat(resp.getHits().getTotalHits().relation(), equalTo(TotalHits.Relation.EQUAL_TO));
             assertThat(resp.getHits().getAt(0).getId(), equalTo("doc_6"));
             assertThat(resp.getHits().getAt(1).getId(), equalTo("doc_2"));
             assertThat(resp.getHits().getAt(2).getId(), equalTo("doc_1"));
@@ -466,10 +460,8 @@ public class RankDocRetrieverBuilderIT extends ESIntegTestCase {
         SearchSourceBuilder source = new SearchSourceBuilder();
         StandardRetrieverBuilder standard0 = new StandardRetrieverBuilder();
         // this one retrieves docs 1, 4, and 6
-        standard0.queryBuilder = QueryBuilders.boolQuery()
-            .should(QueryBuilders.constantScoreQuery(QueryBuilders.idsQuery().addIds("doc_1")).boost(10L))
-            .should(QueryBuilders.constantScoreQuery(QueryBuilders.idsQuery().addIds("doc_4")).boost(9L))
-            .should(QueryBuilders.constantScoreQuery(QueryBuilders.idsQuery().addIds("doc_6")).boost(8L));
+        standard0.queryBuilder = QueryBuilders.constantScoreQuery(QueryBuilders.queryStringQuery("quick").defaultField(TEXT_FIELD))
+            .boost(10L);
         StandardRetrieverBuilder standard1 = new StandardRetrieverBuilder();
         // this one retrieves docs 2 and 6 due to prefilter
         standard1.queryBuilder = QueryBuilders.constantScoreQuery(QueryBuilders.termsQuery(ID_FIELD, "doc_2", "doc_3", "doc_6")).boost(20L);
@@ -511,14 +503,14 @@ public class RankDocRetrieverBuilderIT extends ESIntegTestCase {
         ElasticsearchAssertions.assertResponse(req, resp -> {
             assertNull(resp.pointInTimeId());
             assertNotNull(resp.getHits().getTotalHits());
-            assertThat(resp.getHits().getTotalHits().value, equalTo(6L));
-            assertThat(resp.getHits().getTotalHits().relation, equalTo(TotalHits.Relation.EQUAL_TO));
+            assertThat(resp.getHits().getTotalHits().value(), equalTo(6L));
+            assertThat(resp.getHits().getTotalHits().relation(), equalTo(TotalHits.Relation.EQUAL_TO));
             assertThat(resp.getHits().getAt(0).getId(), equalTo("doc_4"));
-            assertThat(resp.getHits().getAt(1).getId(), equalTo("doc_1"));
+            assertThat(resp.getHits().getAt(1).getId(), equalTo("doc_6"));
             assertThat(resp.getHits().getAt(2).getId(), equalTo("doc_2"));
-            assertThat(resp.getHits().getAt(3).getId(), equalTo("doc_3"));
-            assertThat(resp.getHits().getAt(4).getId(), equalTo("doc_6"));
-            assertThat(resp.getHits().getAt(5).getId(), equalTo("doc_7"));
+            assertThat(resp.getHits().getAt(3).getId(), equalTo("doc_1"));
+            assertThat(resp.getHits().getAt(4).getId(), equalTo("doc_7"));
+            assertThat(resp.getHits().getAt(5).getId(), equalTo("doc_3"));
         });
     }
 
@@ -549,13 +541,13 @@ public class RankDocRetrieverBuilderIT extends ESIntegTestCase {
         ElasticsearchAssertions.assertResponse(req, resp -> {
             assertNull(resp.pointInTimeId());
             assertNotNull(resp.getHits().getTotalHits());
-            assertThat(resp.getHits().getTotalHits().value, equalTo(5L));
-            assertThat(resp.getHits().getTotalHits().relation, equalTo(TotalHits.Relation.EQUAL_TO));
+            assertThat(resp.getHits().getTotalHits().value(), equalTo(5L));
+            assertThat(resp.getHits().getTotalHits().relation(), equalTo(TotalHits.Relation.EQUAL_TO));
             assertThat(resp.getHits().getAt(0).getId(), equalTo("doc_4"));
             assertThat(resp.getHits().getAt(1).getId(), equalTo("doc_1"));
-            assertThat(resp.getHits().getAt(2).getId(), equalTo("doc_2"));
+            assertThat(resp.getHits().getAt(2).getId(), equalTo("doc_7"));
             assertThat(resp.getHits().getAt(3).getId(), equalTo("doc_6"));
-            assertThat(resp.getHits().getAt(4).getId(), equalTo("doc_7"));
+            assertThat(resp.getHits().getAt(4).getId(), equalTo("doc_2"));
         });
     }
 
@@ -681,12 +673,20 @@ public class RankDocRetrieverBuilderIT extends ESIntegTestCase {
             for (int i = 0; i < size; i++) {
                 var hit = searchResponse.getHits().getAt(i);
                 long sortValue = (long) hit.getRawSortValues()[hit.getRawSortValues().length - 1];
-                int doc = ShardDocSortField.decodeDoc(sortValue);
-                int shardRequestIndex = ShardDocSortField.decodeShardRequestIndex(sortValue);
+                int doc = decodeDoc(sortValue);
+                int shardRequestIndex = decodeShardRequestIndex(sortValue);
                 docs[i] = new RankDoc(doc, hit.getScore(), shardRequestIndex);
                 docs[i].rank = i + 1;
             }
             return docs;
+        }
+
+        public static int decodeDoc(long value) {
+            return (int) value;
+        }
+
+        public static int decodeShardRequestIndex(long value) {
+            return (int) (value >> 32);
         }
 
         record RankDocAndHitRatio(RankDoc rankDoc, float hitRatio) {}
