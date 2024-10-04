@@ -17,6 +17,7 @@ import org.elasticsearch.action.bulk.SimulateBulkRequest;
 import org.elasticsearch.client.internal.node.NodeClient;
 import org.elasticsearch.common.bytes.BytesReference;
 import org.elasticsearch.common.xcontent.XContentHelper;
+import org.elasticsearch.core.Nullable;
 import org.elasticsearch.core.Tuple;
 import org.elasticsearch.ingest.ConfigurationUtils;
 import org.elasticsearch.ingest.IngestDocument;
@@ -38,6 +39,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.elasticsearch.rest.RestRequest.Method.GET;
 import static org.elasticsearch.rest.RestRequest.Method.POST;
@@ -50,6 +52,14 @@ import static org.elasticsearch.rest.RestRequest.Method.POST;
  */
 @ServerlessScope(Scope.PUBLIC)
 public class RestSimulateIngestAction extends BaseRestHandler {
+
+    private static final Set<String> SUPPORTED_QUERY_PARAMETERS = Set.of(
+        "_source",
+        "_source_excludes",
+        "_source_includes",
+        "index",
+        "pipeline"
+    );
 
     @Override
     public List<Route> routes() {
@@ -66,6 +76,10 @@ public class RestSimulateIngestAction extends BaseRestHandler {
         return "ingest_simulate_ingest_action";
     }
 
+    public @Nullable Set<String> supportedQueryParameters() {
+        return SUPPORTED_QUERY_PARAMETERS;
+    }
+
     @Override
     @SuppressWarnings("unchecked")
     public RestChannelConsumer prepareRequest(final RestRequest request, final NodeClient client) throws IOException {
@@ -76,7 +90,8 @@ public class RestSimulateIngestAction extends BaseRestHandler {
         Map<String, Object> sourceMap = XContentHelper.convertToMap(sourceTuple.v2(), false, sourceTuple.v1()).v2();
         SimulateBulkRequest bulkRequest = new SimulateBulkRequest(
             (Map<String, Map<String, Object>>) sourceMap.remove("pipeline_substitutions"),
-            (Map<String, Map<String, Object>>) sourceMap.remove("component_template_substitutions")
+            (Map<String, Map<String, Object>>) sourceMap.remove("component_template_substitutions"),
+            (Map<String, Map<String, Object>>) sourceMap.remove("index_template_substitutions")
         );
         BytesReference transformedData = convertToBulkRequestXContentBytes(sourceMap);
         bulkRequest.add(
