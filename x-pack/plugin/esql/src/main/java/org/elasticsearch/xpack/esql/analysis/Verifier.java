@@ -19,8 +19,12 @@ import org.elasticsearch.xpack.esql.core.expression.Expressions;
 import org.elasticsearch.xpack.esql.core.expression.FieldAttribute;
 import org.elasticsearch.xpack.esql.core.expression.NamedExpression;
 import org.elasticsearch.xpack.esql.core.expression.TypeResolutions;
+import org.elasticsearch.xpack.esql.core.expression.function.Function;
 import org.elasticsearch.xpack.esql.core.expression.predicate.BinaryOperator;
 import org.elasticsearch.xpack.esql.core.expression.predicate.fulltext.MatchQueryPredicate;
+import org.elasticsearch.xpack.esql.core.expression.predicate.logical.BinaryLogic;
+import org.elasticsearch.xpack.esql.core.expression.predicate.logical.Not;
+import org.elasticsearch.xpack.esql.core.expression.predicate.logical.Or;
 import org.elasticsearch.xpack.esql.core.expression.predicate.operator.comparison.BinaryComparison;
 import org.elasticsearch.xpack.esql.core.type.DataType;
 import org.elasticsearch.xpack.esql.core.util.Holder;
@@ -28,6 +32,8 @@ import org.elasticsearch.xpack.esql.expression.function.UnsupportedAttribute;
 import org.elasticsearch.xpack.esql.expression.function.aggregate.AggregateFunction;
 import org.elasticsearch.xpack.esql.expression.function.aggregate.Rate;
 import org.elasticsearch.xpack.esql.expression.function.fulltext.FullTextFunction;
+import org.elasticsearch.xpack.esql.expression.function.fulltext.MatchFunction;
+import org.elasticsearch.xpack.esql.expression.function.fulltext.QueryStringFunction;
 import org.elasticsearch.xpack.esql.expression.function.grouping.GroupingFunction;
 import org.elasticsearch.xpack.esql.expression.predicate.operator.arithmetic.Neg;
 import org.elasticsearch.xpack.esql.expression.predicate.operator.comparison.Equals;
@@ -645,27 +651,91 @@ public class Verifier {
     private static void checkFullTextQueryFunctions(LogicalPlan plan, Set<Failure> failures) {
         if (plan instanceof Filter f) {
             Expression condition = f.condition();
-            if (condition instanceof FullTextFunction ftf) {
-                // Similar to cases present in org.elasticsearch.xpack.esql.optimizer.rules.PushDownAndCombineFilters -
-                // we can't check if it can be pushed down as we don't have yet information about the fields present in the
-                // StringQueryPredicate
-                plan.forEachDown(LogicalPlan.class, lp -> {
-                    if ((lp instanceof Filter || lp instanceof OrderBy || lp instanceof EsRelation) == false) {
-                        failures.add(
-                            fail(
-                                plan,
-                                "[{}] function cannot be used after {}",
-                                ftf.functionName(),
-                                lp.sourceText().split(" ")[0].toUpperCase(Locale.ROOT)
-                            )
-                        );
-                    }
-                });
-            }
+            checkCommandsBeforeQueryStringFunction(plan, condition, failures);
+            checkCommandsBeforeMatchFunction(plan, condition, failures);
+            checkFullTextFunctionsConditions(condition, failures);
+            checkFullTextFunctionsParents(condition, failures);
         } else {
             plan.forEachExpression(FullTextFunction.class, ftf -> {
                 failures.add(fail(ftf, "[{}] function is only supported in WHERE commands", ftf.functionName()));
             });
         }
+    }
+
+    private static void checkCommandsBeforeQueryStringFunction(LogicalPlan plan, Expression condition, Set<Failure> failures) {
+        condition.forEachDown(QueryStringFunction.class, qsf -> {
+            plan.forEachDown(LogicalPlan.class, lp -> {
+                if ((lp instanceof Filter || lp instanceof OrderBy || lp instanceof EsRelation) == false) {
+                    failures.add(
+                        fail(
+                            plan,
+                            "[{}] function cannot be used after {}",
+                            qsf.functionName(),
+                            lp.sourceText().split(" ")[0].toUpperCase(Locale.ROOT)
+                        )
+                    );
+                }
+            });
+        });
+    }
+
+    private static void checkCommandsBeforeMatchFunction(LogicalPlan plan, Expression condition, Set<Failure> failures) {
+        condition.forEachDown(MatchFunction.class, qsf -> {
+            plan.forEachDown(LogicalPlan.class, lp -> {
+                if (lp instanceof Limit) {
+                    failures.add(
+                        fail(
+                            plan,
+                            "[{}] function cannot be used after {}",
+                            qsf.functionName(),
+                            lp.sourceText().split(" ")[0].toUpperCase(Locale.ROOT)
+                        )
+                    );
+                }
+            });
+        });
+    }
+
+    private static void checkFullTextFunctionsConditions(Expression condition, Set<Failure> failures) {
+        condition.forEachUp(Or.class, or -> {
+            Expression left = or.left();
+            Expression right = or.right();
+            checkDisjunction(failures, or, left, right);
+            checkDisjunction(failures, or, right, left);
+        });
+    }
+
+    private static void checkDisjunction(Set<Failure> failures, Or or, Expression left, Expression right) {
+        left.forEachDown(FullTextFunction.class, ftf -> {
+            if (canPushToSource(right, x -> false) == false) {
+                failures.add(
+                    fail(
+                        or,
+                        "Invalid condition [{}]. Function {} can't be used as part of an or condition that includes [{}]",
+                        or.sourceText(),
+                        ftf.functionName(),
+                        right.sourceText()
+                    )
+                );
+            }
+        });
+    }
+
+    private static void checkFullTextFunctionsParents(Expression condition, Set<Failure> failures) {
+        condition.forEachParent(FullTextFunction.class, (ftf, parent) -> {
+            if ((parent instanceof FullTextFunction == false)
+                && (parent instanceof BinaryLogic == false)
+                && (parent instanceof Not == false)) {
+                failures.add(
+                    fail(
+                        condition,
+                        "Invalid condition [{}]. Function {} can't be used with {}",
+                        condition.sourceText(),
+                        ftf.functionName(),
+                        ((Function) parent).functionName()
+                    )
+                );
+            }
+        });
     }
 }
