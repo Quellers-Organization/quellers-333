@@ -238,6 +238,8 @@ public class AzureBlobStoreRepositoryTests extends ESMockAPIBasedRepositoryInteg
                 trackRequest("PutBlockList");
             } else if (Regex.simpleMatch("PUT /*/*", request)) {
                 trackRequest("PutBlob");
+            } else if (Regex.simpleMatch("DELETE /*/*/*", request)) {
+                trackRequest("DeleteBlob");
             }
         }
 
