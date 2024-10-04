@@ -35,7 +35,6 @@ import org.elasticsearch.xcontent.XContentParserConfiguration;
 import org.elasticsearch.xcontent.XContentType;
 import org.elasticsearch.xpack.esql.Column;
 import org.elasticsearch.xpack.esql.core.tree.Source;
-import org.elasticsearch.xpack.esql.core.type.DataType;
 import org.elasticsearch.xpack.esql.parser.ParsingException;
 import org.elasticsearch.xpack.esql.parser.QueryParam;
 import org.elasticsearch.xpack.esql.parser.QueryParams;
@@ -49,6 +48,15 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
+import static org.elasticsearch.xpack.esql.EsqlTestUtils.paramAsConstant;
+import static org.elasticsearch.xpack.esql.EsqlTestUtils.paramAsIdentifier;
+import static org.elasticsearch.xpack.esql.EsqlTestUtils.paramAsPattern;
+import static org.elasticsearch.xpack.esql.core.type.DataType.BOOLEAN;
+import static org.elasticsearch.xpack.esql.core.type.DataType.DOUBLE;
+import static org.elasticsearch.xpack.esql.core.type.DataType.INTEGER;
+import static org.elasticsearch.xpack.esql.core.type.DataType.KEYWORD;
+import static org.elasticsearch.xpack.esql.core.type.DataType.LONG;
+import static org.elasticsearch.xpack.esql.core.type.DataType.NULL;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasSize;
@@ -92,25 +100,37 @@ public class EsqlQueryRequestTests extends ESTestCase {
         QueryBuilder filter = randomQueryBuilder();
 
         String paramsString = """
-            ,"params":[ {"n1" : "8.15.0" }, { "n2" : 0.05 }, {"n3" : -799810013 },
-             {"n4" : "127.0.0.1"}, {"n5" : "esql"}, {"n_6" : null}, {"n7_" : false},
-             {"_n1" : "8.15.0" }, { "__n2" : 0.05 }, {"__3" : -799810013 },
-             {"__4n" : "127.0.0.1"}, {"_n5" : "esql"}, {"_n6" : null}, {"_n7" : false}] }""";
-        List<QueryParam> params = new ArrayList<>(4);
-        params.add(new QueryParam("n1", "8.15.0", DataType.KEYWORD));
-        params.add(new QueryParam("n2", 0.05, DataType.DOUBLE));
-        params.add(new QueryParam("n3", -799810013, DataType.INTEGER));
-        params.add(new QueryParam("n4", "127.0.0.1", DataType.KEYWORD));
-        params.add(new QueryParam("n5", "esql", DataType.KEYWORD));
-        params.add(new QueryParam("n_6", null, DataType.NULL));
-        params.add(new QueryParam("n7_", false, DataType.BOOLEAN));
-        params.add(new QueryParam("_n1", "8.15.0", DataType.KEYWORD));
-        params.add(new QueryParam("__n2", 0.05, DataType.DOUBLE));
-        params.add(new QueryParam("__3", -799810013, DataType.INTEGER));
-        params.add(new QueryParam("__4n", "127.0.0.1", DataType.KEYWORD));
-        params.add(new QueryParam("_n5", "esql", DataType.KEYWORD));
-        params.add(new QueryParam("_n6", null, DataType.NULL));
-        params.add(new QueryParam("_n7", false, DataType.BOOLEAN));
+            ,"params":[ {"n1" : {"value" : "f1", "Identifier" : true}},
+             {"n2" : {"value" : "f1*", "identifier" : true}},
+             {"n3" : {"value" : "f.1*", "identifierPattern" : true}},
+             {"n4" : {"value" : "*", "identifierPattern" : true}},
+             {"n5" : {"value" : "esql", "identifier" : true}},
+             {"n_6" : {"value" : "null", "identifier" : true}},
+             {"n7_" : {"value" : "f.1.1"}},
+             {"_n1" : "8.15.0"},
+             { "__n2" : 0.05},
+             {"__3" : -799810013},
+             {"__4n" : "127.0.0.1"},
+             {"_n5" : "esql"},
+             {"_n6" : null},
+             {"_n7" : false}] }""";
+
+        List<QueryParam> params = List.of(
+            paramAsIdentifier("n1", "f1"),
+            paramAsIdentifier("n2", "f1*"),
+            paramAsPattern("n3", "f.1*"),
+            paramAsPattern("n4", "*"),
+            paramAsIdentifier("n5", "esql"),
+            paramAsIdentifier("n_6", "null"),
+            paramAsConstant("n7_", "f.1.1"),
+            paramAsConstant("_n1", "8.15.0"),
+            paramAsConstant("__n2", 0.05),
+            paramAsConstant("__3", -799810013),
+            paramAsConstant("__4n", "127.0.0.1"),
+            paramAsConstant("_n5", "esql"),
+            paramAsConstant("_n6", null),
+            paramAsConstant("_n7", false)
+        );
         String json = String.format(Locale.ROOT, """
             {
                 "query": "%s",
@@ -139,6 +159,7 @@ public class EsqlQueryRequestTests extends ESTestCase {
         Locale locale = randomLocale(random());
         QueryBuilder filter = randomQueryBuilder();
 
+        // invalid named parameter for constants
         String paramsString1 = """
             "params":[ {"1" : "v1" }, {"1x" : "v1" }, {"@a" : "v1" }, {"@-#" : "v1" }, 1, 2, {"_1" : "v1" }, {"Å" : 0}, {"x " : 0}]""";
         String json1 = String.format(Locale.ROOT, """
@@ -196,6 +217,79 @@ public class EsqlQueryRequestTests extends ESTestCase {
             e2.getCause().getMessage(),
             containsString("Params cannot contain both named and unnamed parameters; got [{1:v1}, {1x:v1}] and [{1}, {2}]")
         );
+
+        // invalid named parameter for identifier and identifier pattern
+        String paramsString3 = """
+            "params":[ {"n1" : {"v" : "v1"}}, {"n2" : {"value" : "v2", "id" : true}}, {"n3" : {"value" : "v3", "pattern" : true }},
+            {"n4" : {"value" : 1, "identifier" : true}}, {"n5" : {"value" : true, "identifierPattern" : true}},
+            {"n6" : {"identifierPattern" : true}}, {"n7" : {"v" : "v7", "identifier" : true}},
+            {"n8" : {"value" : "v8", "identifierPattern" : true}}, {"n9" : {"value" : "v9", "identifierPattern" : "wrong pattern"}},
+            {"n10" : {"value" : "v10", "identifier" : 0}}, {"n11" : {"value" : ["x", "y"], "identifier" : true}},
+            {"n12" : {"value" : "v12", "identifier" : true, "identifierpattern" : true}}]""";
+        String json3 = String.format(Locale.ROOT, """
+            {
+                %s
+                "query": "%s",
+                "columnar": %s,
+                "locale": "%s",
+                "filter": %s
+            }""", paramsString3, query, columnar, locale.toLanguageTag(), filter);
+
+        Exception e3 = expectThrows(XContentParseException.class, () -> parseEsqlQueryRequestSync(json3));
+        assertThat(
+            e3.getCause().getMessage(),
+            containsString(
+                "Failed to parse params: [2:16] [v] is not a valid param attribute, "
+                    + "a valid attribute is any of value, identifier, identifierpattern"
+            )
+        );
+        assertThat(e3.getCause().getMessage(), containsString("[2:39] [id] is not a valid param attribute"));
+        assertThat(e3.getCause().getMessage(), containsString("[2:79] [pattern] is not a valid param attribute"));
+        assertThat(
+            e3.getCause().getMessage(),
+            containsString("[3:1] [1] is not a valid value for identifier parameter, a valid value for identifier parameter is a string")
+        );
+        assertThat(
+            e3.getCause().getMessage(),
+            containsString(
+                "[3:46] [true] is not a valid value for pattern parameter, a valid value for pattern parameter is a string and contains *"
+            )
+        );
+        assertThat(
+            e3.getCause().getMessage(),
+            containsString(
+                "[4:40] [v] is not a valid param attribute, " + "a valid attribute is any of value, identifier, identifierpattern"
+            )
+        );
+        assertThat(
+            e3.getCause().getMessage(),
+            containsString(
+                "[5:1] [v8] is not a valid value for pattern parameter, a valid value for pattern parameter is a string and contains *"
+            )
+        );
+        assertThat(
+            e3.getCause().getMessage(),
+            containsString(
+                "[5:56] [wrong pattern] is not a valid value for an identifier pattern field, a valid value is either true or false"
+            )
+        );
+        assertThat(
+            e3.getCause().getMessage(),
+            containsString("[6:1] [0] is not a valid value for an identifier field, a valid value is either true or false")
+        );
+        assertThat(
+            e3.getCause().getMessage(),
+            containsString(
+                "[6:48] [[x, y]] is not a valid value for identifier parameter, a valid value for identifier parameter is a string"
+            )
+        );
+        assertThat(
+            e3.getCause().getMessage(),
+            containsString(
+                "[7:1] [n12 = {value=v12, identifier=true, identifierpattern=true}] "
+                    + "can be either an identifier or an identifierpattern, but cannot be both"
+            )
+        );
     }
 
     // Test for https://github.com/elastic/elasticsearch/issues/110028
@@ -206,7 +300,7 @@ public class EsqlQueryRequestTests extends ESTestCase {
         var paramName = randomAlphaOfLength(5);
         var paramValue = randomAlphaOfLength(5);
         request1.params().addParsingError(new ParsingException(Source.EMPTY, exceptionMessage));
-        request1.params().addTokenParam(null, new QueryParam(paramName, paramValue, DataType.KEYWORD));
+        request1.params().addTokenParam(null, paramAsConstant(paramName, paramValue));
 
         EsqlQueryRequest request2 = new EsqlQueryRequest();
         assertThat(request2.params(), equalTo(new QueryParams()));
@@ -329,7 +423,7 @@ public class EsqlQueryRequestTests extends ESTestCase {
             """;
         EsqlQueryRequest request = parseEsqlQueryRequest(json, randomBoolean());
         Column c = request.tables().get("a").get("c");
-        assertThat(c.type(), equalTo(DataType.KEYWORD));
+        assertThat(c.type(), equalTo(KEYWORD));
         try (
             BytesRefBlock.Builder builder = new BlockFactory(
                 new NoopCircuitBreaker(CircuitBreaker.REQUEST),
@@ -361,7 +455,7 @@ public class EsqlQueryRequestTests extends ESTestCase {
 
         EsqlQueryRequest request = parseEsqlQueryRequest(json, randomBoolean());
         Column c = request.tables().get("a").get("c");
-        assertThat(c.type(), equalTo(DataType.INTEGER));
+        assertThat(c.type(), equalTo(INTEGER));
         try (
             IntBlock.Builder builder = new BlockFactory(new NoopCircuitBreaker(CircuitBreaker.REQUEST), BigArrays.NON_RECYCLING_INSTANCE)
                 .newIntBlockBuilder(10)
@@ -389,7 +483,7 @@ public class EsqlQueryRequestTests extends ESTestCase {
 
         EsqlQueryRequest request = parseEsqlQueryRequest(json, randomBoolean());
         Column c = request.tables().get("a").get("c");
-        assertThat(c.type(), equalTo(DataType.LONG));
+        assertThat(c.type(), equalTo(LONG));
         try (
             LongBlock.Builder builder = new BlockFactory(new NoopCircuitBreaker(CircuitBreaker.REQUEST), BigArrays.NON_RECYCLING_INSTANCE)
                 .newLongBlockBuilder(10)
@@ -417,7 +511,7 @@ public class EsqlQueryRequestTests extends ESTestCase {
 
         EsqlQueryRequest request = parseEsqlQueryRequest(json, randomBoolean());
         Column c = request.tables().get("a").get("c");
-        assertThat(c.type(), equalTo(DataType.DOUBLE));
+        assertThat(c.type(), equalTo(DOUBLE));
         try (
             DoubleBlock.Builder builder = new BlockFactory(new NoopCircuitBreaker(CircuitBreaker.REQUEST), BigArrays.NON_RECYCLING_INSTANCE)
                 .newDoubleBlockBuilder(10)
@@ -459,15 +553,15 @@ public class EsqlQueryRequestTests extends ESTestCase {
         EsqlQueryRequest request = parseEsqlQueryRequest(json, randomBoolean());
         assertThat(request.tables().keySet(), hasSize(2));
         Map<String, Column> t1 = request.tables().get("t1");
-        assertThat(t1.get("a").type(), equalTo(DataType.LONG));
-        assertThat(t1.get("b").type(), equalTo(DataType.LONG));
-        assertThat(t1.get("c").type(), equalTo(DataType.KEYWORD));
-        assertThat(t1.get("d").type(), equalTo(DataType.LONG));
+        assertThat(t1.get("a").type(), equalTo(LONG));
+        assertThat(t1.get("b").type(), equalTo(LONG));
+        assertThat(t1.get("c").type(), equalTo(KEYWORD));
+        assertThat(t1.get("d").type(), equalTo(LONG));
         Map<String, Column> t2 = request.tables().get("t2");
-        assertThat(t2.get("a").type(), equalTo(DataType.LONG));
-        assertThat(t2.get("b").type(), equalTo(DataType.INTEGER));
-        assertThat(t2.get("c").type(), equalTo(DataType.LONG));
-        assertThat(t2.get("d").type(), equalTo(DataType.LONG));
+        assertThat(t2.get("a").type(), equalTo(LONG));
+        assertThat(t2.get("b").type(), equalTo(INTEGER));
+        assertThat(t2.get("c").type(), equalTo(LONG));
+        assertThat(t2.get("d").type(), equalTo(LONG));
         assertTablesOnlyValidOnSnapshot(request);
     }
 
@@ -519,12 +613,12 @@ public class EsqlQueryRequestTests extends ESTestCase {
             for (int i = 0; i < len; i++) {
                 @SuppressWarnings("unchecked")
                 Supplier<QueryParam> supplier = randomFrom(
-                    () -> new QueryParam(null, randomBoolean(), DataType.BOOLEAN),
-                    () -> new QueryParam(null, randomInt(), DataType.INTEGER),
-                    () -> new QueryParam(null, randomLong(), DataType.LONG),
-                    () -> new QueryParam(null, randomDouble(), DataType.DOUBLE),
-                    () -> new QueryParam(null, null, DataType.NULL),
-                    () -> new QueryParam(null, randomAlphaOfLength(10), DataType.KEYWORD)
+                    () -> paramAsConstant(null, randomBoolean()),
+                    () -> paramAsConstant(null, randomInt()),
+                    () -> paramAsConstant(null, randomLong()),
+                    () -> paramAsConstant(null, randomDouble()),
+                    () -> paramAsConstant(null, null),
+                    () -> paramAsConstant(null, randomAlphaOfLength(10))
                 );
                 arr.add(supplier.get());
             }
@@ -542,11 +636,11 @@ public class EsqlQueryRequestTests extends ESTestCase {
                     paramsString.append(", ");
                 }
                 first = false;
-                if (param.type() == DataType.KEYWORD) {
+                if (param.type() == KEYWORD) {
                     paramsString.append("\"");
                     paramsString.append(param.value());
                     paramsString.append("\"");
-                } else if (param.type().isNumeric() || param.type() == DataType.BOOLEAN || param.type() == DataType.NULL) {
+                } else if (param.type().isNumeric() || param.type() == BOOLEAN || param.type() == NULL) {
                     paramsString.append(param.value());
                 }
             }
