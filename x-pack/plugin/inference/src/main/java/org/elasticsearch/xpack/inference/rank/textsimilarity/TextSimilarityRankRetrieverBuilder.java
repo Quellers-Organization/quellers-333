@@ -56,7 +56,11 @@ public class TextSimilarityRankRetrieverBuilder extends RetrieverBuilder {
         });
 
     static {
-        PARSER.declareNamedObject(constructorArg(), (p, c, n) -> p.namedObject(RetrieverBuilder.class, n, c), RETRIEVER_FIELD);
+        PARSER.declareNamedObject(constructorArg(), (p, c, n) -> {
+            RetrieverBuilder innerRetriever = p.namedObject(RetrieverBuilder.class, n, c);
+            c.trackRetrieverUsage(innerRetriever.getName());
+            return innerRetriever;
+        }, RETRIEVER_FIELD);
         PARSER.declareString(constructorArg(), INFERENCE_ID_FIELD);
         PARSER.declareString(constructorArg(), INFERENCE_TEXT_FIELD);
         PARSER.declareString(constructorArg(), FIELD_FIELD);
@@ -179,17 +183,11 @@ public class TextSimilarityRankRetrieverBuilder extends RetrieverBuilder {
 
     @Override
     protected void doToXContent(XContentBuilder builder, Params params) throws IOException {
-        builder.field(RETRIEVER_FIELD.getPreferredName());
-        builder.startObject();
-        builder.field(retrieverBuilder.getName(), retrieverBuilder);
-        builder.endObject();
+        builder.field(RETRIEVER_FIELD.getPreferredName(), retrieverBuilder);
         builder.field(INFERENCE_ID_FIELD.getPreferredName(), inferenceId);
         builder.field(INFERENCE_TEXT_FIELD.getPreferredName(), inferenceText);
         builder.field(FIELD_FIELD.getPreferredName(), field);
         builder.field(RANK_WINDOW_SIZE_FIELD.getPreferredName(), rankWindowSize);
-        if (minScore != null) {
-            builder.field(MIN_SCORE_FIELD.getPreferredName(), minScore);
-        }
     }
 
     @Override
